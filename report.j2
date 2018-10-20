@@ -1,0 +1,285 @@
+{# アサート結果のマージ #}
+{% set marged_results = [] %}
+{% set marged_results = marged_results | list + assert_result_ud.results | list %}
+{% set marged_results = marged_results | list + assert_result_band.results | list %}
+{% set marged_results = marged_results | list + assert_result_duplex.results | list %} 
+{% set marged_results = marged_results | list + assert_result_route.results | list %}
+{% set marged_results = marged_results | list + assert_result_bgp.results | list %}
+
+{# 合計件数 #}
+{% set cnt_total  = marged_results | length %}
+{# 合格件数 #}
+{% set ns = namespace(cnt_success=0) %}
+{% for i in marged_results %}
+{%   if i.failed == false %}
+{%     set ns.cnt_success = ns.cnt_success + 1%}
+{%   endif %} 
+{% endfor %}
+{# 合格率 #}
+{% set per_success = (ns.cnt_success / cnt_total) * 100 %}
+
+<html>
+<head>
+        <link rel="stylesheet" href="css/spectre.min.css">
+        <link rel="stylesheet" href="css/spectre-exp.min.css">
+        <link rel="stylesheet" href="css/spectre-icons.min.css">
+
+        <script type="text/javascript" src="https://ajax.googleapis.com/ajax/libs/jquery/1.9.1/jquery.min.js"></script>
+        <script type="text/Javascript">
+            window.onload = function () {
+                // インターフェース
+                $(".close-modal" + ".int").on("click", function() {
+                    $(this).closest('.modal' + '.int').removeClass('active');
+                });
+                
+                $(".show-modal" + ".int").on("click", function() {
+                    $('.modal' + '.int').addClass('active');
+                });
+
+                // ルーティング
+                $(".close-modal" + ".route").on("click", function() {
+                    $(this).closest('.modal' + '.route').removeClass('active');
+                });
+                
+                $(".show-modal" + ".route").on("click", function() {
+                    $('.modal' + '.route').addClass('active');
+                });
+
+                // BGP
+                $(".close-modal" + ".bgp").on("click", function() {
+                    $(this).closest('.modal' + '.bgp').removeClass('active');
+                });
+                
+                $(".show-modal" + ".bgp").on("click", function() {
+                    $('.modal' + '.bgp').addClass('active');
+                });
+
+            }
+        </script>
+</head>
+<body>
+<div class="container" style="margin-top: 20px">
+    <div class="columns">
+        <div class="column col-2"></div>
+        <div class="column col-8">
+            <h1>状態確認レポート</h1>
+            <div class="divider"></div>
+            <div class="columns col-gapless">
+                <div class="column col-8">
+                    <h2>{{ inventory_hostname }}<h2>
+                </div>
+                <div class="column col-4 text-right h3">
+                    {% if per_success == 100 %}
+                    <span class="text-success">
+                    {% else %}
+                    <span class="text-error">
+                    {% endif %}
+                    {{ per_success }}% ({{ ns.cnt_success }}/{{ cnt_total }})</span>
+                </div>
+            </div>
+            <h3 style="margin-top: 20px"><span class="btn show-modal int icon icon-search bg-dark"> </span>インターフェース</h3>
+            <table class="table table-striped table-hover text-center" >
+            
+            <thead class="bg-dark">
+            <tr>
+                <th rowspan=2>インターフェース名</th>
+                <th colspan=3>up/down</th>
+                <th colspan=3>speed(bps)</th>
+                <th colspan=3>duplex</th>
+            </tr>
+            <tr>
+                <!-- <td></td> -->
+
+                <th>期待値</th>
+                <th>取得値</th>
+                <th>合否</th>
+
+                <th>期待値</th>
+                <th>取得値</th>
+                <th>合否</th>
+
+                <th>期待値</th>
+                <th>取得値</th>
+                <th>合否</th>
+            </tr>
+            </thead>
+
+            {# 本当は interface でループしたいけど、1つのコマンドで複数の項目をassertする場合は、こうする #}
+            {% for i in range(interface | length) %}
+            <tr>
+                {% set r_ud = assert_result_ud.results[loop.index0] %}
+                {% set interface = r_ud.item.key %}
+                <td>{{ interface }}</td>
+
+                <td>{{ r_ud.item.value.lineprotocol }}</td>
+                <td>{{ ansible_facts.net_interfaces[interface].lineprotocol }}</td>
+                {% if r_ud.failed %}
+                <td class="label label-error">NG</td>
+                {% else %}
+                <td class="label label-success">OK</td>
+                {% endif %}
+
+                {% set r_band = assert_result_band.results[loop.index0] %}
+                {% set interface = r_band.item.key %}
+                <td>{{ r_band.item.value.bandwidth }}</td>
+                <td>{{ ansible_facts.net_interfaces[interface].bandwidth }}</td>
+                {% if r_band.failed %}
+                <td class="label label-error">NG</td>
+                {% else %}
+                <td class="label label-success">OK</td>
+                {% endif %}
+
+                {% set r_duplex = assert_result_duplex.results[loop.index0] %}
+                {% set interface = r_duplex.item.key %}
+                <td>{{ r_duplex.item.value.duplex }}</td>
+                <td>{{ ansible_facts.net_interfaces[interface].duplex }}</td>
+                {% if r_duplex.failed %}
+                <td class="label label-error">NG</td>
+                {% else %}
+                <td class="label label-success"><span >OK</span></td>
+                {% endif %}
+            </tr>
+            {% endfor %}
+            </table>
+
+            <!-- ルーティング -->
+            <h3 style="margin-top: 20px"><span class="btn show-modal route icon icon-search bg-dark"> </span>ルーティング</h3>
+            <table class="table table-striped table-hover text-center" >
+                
+                <thead class="bg-dark">
+                <tr>
+                    <th rowspan=2>ネットワーク</th>
+                    <th rowspan=2>プレフィックス</th>
+                    <th colspan=3>NEXTHOP_IP</th>
+                </tr>
+                <tr>
+                    <!-- <td></td> -->
+                    <!-- <td></td> -->
+                    <th>期待値</th>
+                    <th>取得値</th>
+                    <th>合否</th>
+                </tr>
+                </thead>
+                
+                {% for r in assert_result_route.results %}
+                <tr>
+                    <td>{{ r.item.NETWORK }}</td>
+                    <td>{{ r.item.MASK }}</td>
+
+                    <td>{{ r.item.NEXTHOP_IP }}</td>
+                    <td>{{ (parsed_result_route | selectattr('NETWORK', 'equalto', r.item.NETWORK) |list | selectattr('MASK', 'equalto', r.item.MASK) | list | first | json_query('NEXTHOP_IP')) }}</td>
+                    {% if r.failed %}
+                    <td class="label label-error">NG</td>
+                    {% else %}
+                    <td class="label label-success">OK</td>
+                    {% endif %}
+                </tr>
+                {% endfor %}
+            </table>
+
+            <!-- BGPルーティング -->
+            <h3 style="margin-top: 20px"><span class="btn show-modal bgp icon icon-search bg-dark"> </span>BGPネイバー</h3>
+            <table class="table table-striped table-hover text-center" >
+                
+                <thead class="bg-dark">
+                <tr>
+                    <th rowspan=2>neighbor</th>
+                    <th rowspan=2>remote-as</th>
+                    <th colspan=3>State/PfxRc</th>
+                </tr>
+                <tr>
+                    <!-- <td></td> -->
+                    <!-- <td></td> -->
+                    <th>期待値</th>
+                    <th>取得値</th>
+                    <th>合否</th>
+                </tr>
+                </thead>
+                
+                {% for r in assert_result_bgp.results %}
+                <tr>
+                    <td>{{ r.item.BGP_NEIGH }}</td>
+                    <td>{{ r.item.NEIGH_AS }}</td>
+
+                    <td>{{ r.item.STATE_PFXRCD }}</td>
+                    <td>{{ (parsed_result_bgp | selectattr('BGP_NEIGH', 'equalto', r.item.BGP_NEIGH) |list | first | json_query('STATE_PFXRCD')) }}</td>
+                    {% if r.failed %}
+                    <td class="label label-error">NG</td>
+                    {% else %}
+                    <td class="label label-success">OK</td>
+                    {% endif %}
+                </tr>
+                {% endfor %}
+            </table>
+        </div>
+        <div class="column col-2"></div>
+    </div>
+</div>
+
+
+
+<!-- ログ -->
+<!-- interface -->
+<div class="modal modal-lg int">
+    <div class="modal-overlay"></div>
+    <div class="modal-container bg-dark">
+        <div class="modal-header">
+            <div class="modal-title bg-gray">show interface</div>
+        </div>
+        <div class="modal-body">
+            <div class="content">
+                <pre>
+{{ result_int_log.stdout[0]}}
+                </pre>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-primary close-modal int" type="button">閉じる</button>
+        </div>
+    </div>
+</div>
+<!-- route -->
+<div class="modal modal-lg route">
+    <div class="modal-overlay"></div>
+    <div class="modal-container bg-dark">
+        <div class="modal-header">
+            <div class="modal-title bg-gray">show ip route</div>
+        </div>
+        <div class="modal-body">
+            <div class="content">
+                <pre>
+{{ route_result.stdout[0]}}
+                </pre>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-primary close-modal route" type="button">閉じる</button>
+        </div>
+    </div>
+</div>
+
+
+
+<!-- bgp -->
+
+<div class="modal modal-lg bgp">
+    <div class="modal-overlay"></div>
+    <div class="modal-container bg-dark">
+        <div class="modal-header">
+            <div class="modal-title bg-gray">show ip bgp summary</div>
+        </div>
+        <div class="modal-body">
+            <div class="content">
+                <pre>
+{{ bgp_result.stdout[0]}}
+                </pre>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-primary close-modal bgp" type="button">閉じる</button>
+        </div>
+    </div>
+</div>
+
+</body>
+</html>

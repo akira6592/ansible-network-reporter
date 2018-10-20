@@ -1,0 +1,153 @@
+- hosts: ios
+  gather_facts: no
+  connection: network_cli
+
+  tasks:
+
+    ########################################################################################
+    # 前処理
+
+    # ログ保存ディレクトリ作成
+    - name: make directory
+      file:
+        state: directory
+        path: "./log/{{ inventory_hostname }}"
+      run_once: yes
+
+
+    ########################################################################################
+    # メイン処理
+
+    # インターフェースチェック
+    - name: interface
+      tags:
+        - int
+      block:
+        ## 収集
+        - name: fact
+          ios_facts:
+            gather_subset: interfaces
+
+        ## チェック
+        ### uo/down
+        - name: assert up/down
+          assert:
+            that:
+              - ansible_facts.net_interfaces[item.key].lineprotocol == item.value.lineprotocol
+          loop: "{{ q('dict', interface, wantlist=True) }}"
+          register: assert_result_ud
+          ignore_errors: yes
+        
+        ### bandwidth
+        - name: assert bandwidth
+          assert:
+            that:
+              - ansible_facts.net_interfaces[item.key].bandwidth == item.value.bandwidth
+          loop: "{{ q('dict', interface, wantlist=True) }}"
+          register: assert_result_band
+          ignore_errors: yes
+
+        ### duplex
+        - name: assert duplex
+          assert:
+            that:
+              - ansible_facts.net_interfaces[item.key].duplex == item.value.duplex
+          loop: "{{ q('dict', interface, wantlist=True) }}"
+          register: assert_result_duplex
+          ignore_errors: yes
+        
+        ## ログ出力用 コマンド実行
+        - name: command for log
+          ios_command:
+            commands:
+              - show interface
+          register: result_int_log
+
+        ## ログ出力
+        - name: log
+          copy:
+            content: "{{ result_int_log.stdout[0] }}"
+            dest: "./log/{{ inventory_hostname }}/show_interface.log"
+
+
+    # ルーティングチェック
+    - name: route
+      tags:
+        - route
+      block:
+        ## 収集
+        - name: show ip route
+          ios_command:
+            commands: show ip route
+          register: route_result
+          tags: rt
+        
+        ## パース
+        - name: route parse
+          set_fact:
+            parsed_result_route: "{{ route_result.stdout[0] | parse_cli_textfsm('cisco_ios_show_ip_route.template') }}"
+          tags: rt
+
+
+        ## チェック
+        - name: assert route
+          assert:
+            that:
+              # json_queryだとクォーテーションの都合でつらいので selectattrメインに。 
+              # includeと loop_varだと resutlが分かれちゃう、マージできればいいけれど
+              - (parsed_result_route | selectattr('NETWORK', 'equalto', item.NETWORK) |list | selectattr('MASK', 'equalto', item.MASK) | list | first | json_query('NEXTHOP_IP')) == item.NEXTHOP_IP
+          loop: "{{ route }}"
+          tags: rt
+          ignore_errors: yes
+          register: assert_result_route
+
+        ## ログ出力
+        - name: log
+          copy:
+            content: "{{ route_result.stdout[0] }}"
+            dest: "./log/{{ inventory_hostname }}/show_ip_route.log"
+
+
+    # BGP サマリーチェック
+    - name: bgp
+      tags:
+        - bgp
+      block:
+        ## 収集
+        - name: show ip bgp summary
+          ios_command:
+            commands: show ip bgp summary
+          register: bgp_result
+
+        ## パース
+        - name: bgp parse
+          set_fact:
+            parsed_result_bgp: "{{ bgp_result.stdout[0] | parse_cli_textfsm('cisco_ios_show_ip_bgp_summary.template') }}"
+
+        ## チェック
+        - name: assert bgp
+          assert:
+            that:
+              # - (parsed_result_bgp | selectattr('BGP_NEIGH', 'equalto', '10.10.20.49') |list | first ) == brp_neighbor[0]
+              - (parsed_result_bgp | selectattr('BGP_NEIGH', 'equalto', item.BGP_NEIGH ) | list | first | json_query('STATE_PFXRCD')) == item.STATE_PFXRCD
+          loop: "{{ brp_neighbor }}"
+          ignore_errors: yes
+          register: assert_result_bgp
+
+        ## ログ出力
+        - name: log
+          copy:
+            content: "{{ bgp_result.stdout[0] }}"
+            dest: "./log/{{ inventory_hostname }}/show_ip_bgp_summary.log"
+
+
+    ########################################################################################
+    # 後処理
+
+    # テンプレート生成
+    - name: report
+      template:
+        src: report.j2
+        dest: "./report_{{ inventory_hostname }}.html"
+
+
