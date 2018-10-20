@@ -1,0 +1,34 @@
+---
+ansible_network_os: ios
+ansible_connection: network_cli
+ansible_user: cisco
+ansible_password: testpassxxxxx
+
+
+# 期待値セット
+interface:
+  GigabitEthernet1:
+    duplex: Full
+    lineprotocol: "up "  # パース結果の最後にスペースが含まれるのであわせる
+    bandwidth: 1000000
+  GigabitEthernet2:
+    duplex: Full
+    lineprotocol: "down "
+    bandwidth: 1000000
+  GigabitEthernet3:
+    duplex: Full
+    lineprotocol: "up "
+    bandwidth: 1000000
+
+route:
+  - NETWORK: 0.0.0.0
+    MASK: "0"
+    NEXTHOP_IP: 10.10.20.254
+
+brp_neighbor:
+  - BGP_NEIGH : "10.10.20.2"
+    NEIGH_AS : "65002"
+    STATE_PFXRCD : "Established"
+  - BGP_NEIGH : "10.10.20.3"
+    NEIGH_AS : "65003"
+    STATE_PFXRCD : "Established"
